@@ -53,7 +53,11 @@ In your preset's `agent.cordis.yml`, replace the `tool-subagent` row:
 
 ## Configure
 
-Settings → Plugins → dsh-subagent-model, or in `~/.dsh/settings.yaml`:
+**Settings → Plugins → Subagent model.** The card lists your allowed routes, each with an effort dropdown populated from what that exact model advertises, plus an "Add a route…" picker fed by the live model catalog. Edits stage locally and commit on **Save** through the revision-fenced settings scope, so a half-finished edit never reaches a running agent. The banner states plainly whether you are currently *inheriting* or *forcing*.
+
+Both halves ship in this one package: installing it puts the card on the settings page. The Plugins tab renders only namespaces a registered card claims, so there is no generic schema-driven form to fall back on.
+
+Equivalently, in `~/.dsh/settings.yaml`:
 
 ```yaml
 dsh-subagent-model:
@@ -89,16 +93,23 @@ Both are read at **every** tool call, so an edit applies to the next delegation 
 | `persona` | — | Optional per-child persona shadowing the deployment persona |
 | `maxDepth` | `3` | Child recursion cap, or `provider-managed` to send none |
 
+## Routes
+
+| Route | Purpose |
+|---|---|
+| `GET /subagent-model/catalog` | The model catalog the settings card reads: every route with its native input modalities and advertised reasoning efforts, plus the `inherit/current` entry. Registered through a nested plugin injecting `webServer`, so the package still mounts in profiles with no web server. |
+
 ## Tests
 
 ```sh
 npm test
 ```
 
-39 tests. `policy.test.mjs` and `reservations.test.mjs` are dependency-free — the route, effort, and reservation-matching rules are pure and need no harness. `integration.test.mjs` mounts the tool on a real Cordis context with the real `ToolRuntime`/`SubagentRuntime` and asserts against a capture provider that the built `SubagentStartRequest` carries the chosen route, including that the seeded inherit route reproduces the shipped behavior. `defaults.test.mjs` pins the behavior-neutral seed. The harness-dependent suites self-skip when those packages are not resolvable.
+49 tests. `policy.test.mjs` and `reservations.test.mjs` are dependency-free — the route, effort, and reservation-matching rules are pure and need no harness. `integration.test.mjs` mounts the tool on a real Cordis context with the real `ToolRuntime`/`SubagentRuntime` and asserts against a capture provider that the built `SubagentStartRequest` carries the chosen route, including that the seeded inherit route reproduces the shipped behavior. `defaults.test.mjs` pins the behavior-neutral seed. `client-card.test.mjs` exercises the browser card without a browser — it supplies a module loader and a React stub that records the element tree, then asserts the slot registration, that nothing is written before Save, that Save writes `efforts` before `routes`, and that a removed route takes its effort with it. The harness-dependent suites self-skip when those packages are not resolvable.
 
 ## Known limitations
 
 - **The effort reservation is in-memory.** A process restart between a child's creation and its first request loses the reserved effort, and that child falls back to its route's provider default. The route itself is durable, so this cannot silently change models.
-- **No browser settings card.** The namespace renders through the generic Settings → Plugins surface; there is no custom UI half.
+- **`lib/client.js` is a hand-written lazy-CJS factory.** The repository's `tsdown` client preset is not published, so an out-of-tree package must reproduce that artifact format itself. The card therefore uses `React.createElement` directly and draws its own chrome — the client bundle-purity gate rejects value imports across plugins, so it cannot reuse the shipped card components.
+- **The card needs the catalog route to offer choices.** Without a web server the settings namespace still works from YAML; the picker and effort dropdowns are simply empty.
 - **One tool row per provider.** Two rows sharing a `toolName` collide at registration, by design.
