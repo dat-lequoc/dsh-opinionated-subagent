@@ -198,6 +198,45 @@ test('a configured effort the catalog no longer advertises stays visible', () =>
   assert.match(textOf(tree), /ultra \(not advertised\)/)
 })
 
+test('every theme token the card names is one the Theme provider publishes', () => {
+  // The card draws its own chrome, so a token TYPO cannot fail loudly: CSS
+  // falls through to the literal fallback beside it, and those fallbacks are
+  // light-theme colors — a wrong name renders the whole card as near-black text
+  // on a dark surface while the shipped cards around it look right. This pins
+  // the names against the published `--dsw-alias-*` set.
+  const published = new Set([
+    '--dsw-alias-bg-base',
+    '--dsw-alias-bg-layer-1',
+    '--dsw-alias-bg-layer-2',
+    '--dsw-alias-bg-overlay',
+    '--dsw-alias-border-l1',
+    '--dsw-alias-border-l2',
+    '--dsw-alias-brand-primary',
+    '--dsw-alias-label-primary',
+    '--dsw-alias-label-secondary',
+    '--dsw-alias-state-error-primary',
+    '--dsw-alias-state-success-primary',
+    '--dsw-alias-state-warn-primary',
+    '--dsw-specific-sidebar-fill',
+  ])
+  const source = readFileSync(SOURCE, 'utf8')
+  const named = [...source.matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1])
+  assert.ok(named.length > 0, 'the card names no theme tokens at all')
+  const invented = [...new Set(named)].filter(one => !published.has(one))
+  assert.deepEqual(invented, [], `card names unpublished theme tokens: ${invented.join(', ')}`)
+})
+
+test('no control is left on a transparent background', () => {
+  // A native <select> paints its own popup surface and a transparent control
+  // shows the browser default (white) under a dark theme.
+  const source = readFileSync(SOURCE, 'utf8')
+  assert.equal(
+    /background:\s*'transparent'/.test(source),
+    false,
+    'a control still sets background: transparent',
+  )
+})
+
 test('a failed save keeps the staged values and says so', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} })
   scope.set = async () => { throw new Error('read-only') }
