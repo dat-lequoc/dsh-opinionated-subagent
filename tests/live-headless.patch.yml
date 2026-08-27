@@ -1,0 +1,45 @@
+# Live end-to-end overlay for dsh-subagent-model.
+#
+# Replaces the headless profile's shipped `tool-subagent` row with this
+# package's forcing frontend, and mounts the host settings namespace the tool
+# reads. Applied with:
+#
+#   dsh --profile headless --patch tests/live-headless.patch.yml "<task>"
+#
+# The point of the run is that the child must reach a route the PARENT is not
+# on: the parent is pinned below to a deepseek route, the allowlist in
+# ~/.dsh/settings.yaml carries no `inherit/current` entry, and the model must
+# name an allowed route — so the child's provider cannot be the parent's.
+#
+# The parent route is pinned here rather than left to settings: the user's
+# `agent-default-model` block may name a provider this profile does not mount
+# (kiro is a web-profile adapter), which fails the run before the tool is
+# reached. A patch layer outranks the composition entry but NOT the settings
+# document, so the pin is only effective while settings names no other route.
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: unlimited
+    model: claude-sonnet-5
+
+# The host settings row is NOT inserted here: installing the package into the
+# profile already mounts `subagent-model-settings` through this package's own
+# bundle patch, and a second row would try to publish `subagentModelSettings`
+# twice.
+#
+# In a patch list `name` is a GUARD compared against the existing row, not an
+# override, so a patch cannot repoint a row at another package. The shipped row
+# is therefore disabled and this package's frontend is inserted under its own
+# id — two live rows registering `subagent` would collide, so exactly one of
+# the pair is ever enabled.
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  disabled: true
+
+- insert:
+    - id: tool-subagent-forced-model
+      name: dsh-subagent-model/spawn
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: one-shot

@@ -105,7 +105,31 @@ Both are read at **every** tool call, so an edit applies to the next delegation 
 npm test
 ```
 
-49 tests. `policy.test.mjs` and `reservations.test.mjs` are dependency-free — the route, effort, and reservation-matching rules are pure and need no harness. `integration.test.mjs` mounts the tool on a real Cordis context with the real `ToolRuntime`/`SubagentRuntime` and asserts against a capture provider that the built `SubagentStartRequest` carries the chosen route, including that the seeded inherit route reproduces the shipped behavior. `defaults.test.mjs` pins the behavior-neutral seed. `client-card.test.mjs` exercises the browser card without a browser — it supplies a module loader and a React stub that records the element tree, then asserts the slot registration, that nothing is written before Save, that Save writes `efforts` before `routes`, and that a removed route takes its effort with it. The harness-dependent suites self-skip when those packages are not resolvable.
+51 tests, all passing. `policy.test.mjs` and `reservations.test.mjs` are dependency-free — the route, effort, and reservation-matching rules are pure and need no harness. `integration.test.mjs` mounts the tool on a real Cordis context with the real `ToolRuntime`/`SubagentRuntime` and asserts against a capture provider that the built `SubagentStartRequest` carries the chosen route, including that the seeded inherit route reproduces the shipped behavior. `defaults.test.mjs` pins the behavior-neutral seed. `client-card.test.mjs` exercises the browser card without a browser — it supplies a module loader and a React stub that records the element tree, then asserts the slot registration, that nothing is written before Save, that Save writes `efforts` before `routes`, and that a removed route takes its effort with it. It also pins every theme token the card names against the set the Theme provider publishes, because an invented token cannot fail loudly — CSS falls through to the literal fallback, so a typo renders the card unreadable rather than erroring. The harness-dependent suites self-skip when those packages are not resolvable.
+
+### Live end-to-end check
+
+`tests/live-headless.patch.yml` runs the real thing: it disables the profile's
+shipped `tool-subagent` row, mounts this frontend in its place, and pins the
+PARENT to a route that is not on the allowlist, so a child reaching the chosen
+model proves the route was forced rather than inherited.
+
+```sh
+dsh plugin --profile headless add /path/to/dsh-subagent-model
+dsh --profile headless --patch tests/live-headless.patch.yml \
+  "Use the subagent tool once with model antigravity/gemini-3.7-flash and prompt 'name your model'."
+```
+
+Verified on a real run: with the parent on `unlimited/claude-sonnet-5` and the
+allowlist forcing `antigravity/gemini-3.7-flash` at `high`, the child's durable
+`request/header` recorded `provider: antigravity`, `model: gemini-3.7-flash`,
+`reasoningEffort: high` — so the effort bridge reaches the actual request, not
+just the tool's label — and the child reported itself as Gemini 3.7 Flash.
+Naming a route the user removed is refused by the schema enum before execution.
+
+The parent route is pinned in the patch layer, but a `agent-default-model` block
+in `~/.dsh/settings.yaml` outranks it: set that to the same route, or remove it,
+or the run boots on whichever provider settings names.
 
 ## Known limitations
 
