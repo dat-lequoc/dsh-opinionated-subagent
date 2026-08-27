@@ -1,0 +1,16 @@
+# dsh-subagent-model bundle patch: mounted as one layer when this package is
+# listed in the profile's dsh.profile.bundles.
+#
+# This layer mounts only the HOST half — the settings namespace that owns the
+# route allowlist and per-route efforts. It publishes `subagentModelSettings`
+# and registers no tool.
+#
+# The TOOL row (`dsh-subagent-model/spawn`) belongs to an agent preset, because
+# a delegation tool is per-agent composition and must REPLACE the shipped
+# `tool-subagent` row rather than sit beside it: two rows registering the same
+# `subagent` tool name collide, and the shipped one has no model argument, so
+# leaving it mounted would give the model a way to bypass this policy. See
+# README.md for the preset edit.
+- insert:
+    - id: subagent-model-settings
+      name: dsh-subagent-model
