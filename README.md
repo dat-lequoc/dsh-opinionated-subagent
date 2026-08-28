@@ -82,6 +82,7 @@ Both are read at **every** tool call, so an edit applies to the next delegation 
 - **The model cannot choose an effort.** There is no effort argument, and a child never inherits the parent's.
 - **Settings are re-read inside `execute`**, so a schema captured a step ago cannot authorize a route you removed since.
 - **Foreground calls are marked concurrency-unsafe**, because they share one parent-matched effort reservation slot.
+- **Each named provider is listed before its routes are resolved.** `resolveModelInfo` is not required to discover capabilities itself: an adapter may answer it from a cache that only `listModels` fills, and report a static fallback list while that cache is cold. Without listing first, an effort the provider genuinely accepts is refused as unadvertised. Only providers your allowlist names are listed, so a delegation never wakes an unrelated adapter.
 
 ## Config reference
 
