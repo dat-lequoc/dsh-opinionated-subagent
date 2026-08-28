@@ -169,6 +169,12 @@ The parent route is pinned in the patch layer, but a `agent-default-model` block
 in `~/.dsh/settings.yaml` outranks it: set that to the same route, or remove it,
 or the run boots on whichever provider settings names.
 
+## Designed, not built
+
+[`docs/refork-spec.md`](docs/refork-spec.md) specifies `refork_subagent`: continue a stalled or wrong-model child's **whole** conversation on a different route, by copying its completed-turn history into a new child rather than resuming the old one on a model that did not produce it.
+
+The spec is complete enough to implement from — every mechanism is cited in current source, the load-bearing assumption is measured on a real stalled child, and the two unverified risks are marked. Two constraints are worth knowing before asking for it: a child killed mid-turn loses that partial turn, because a seed must end at a `turn/end`; and combining a seeded child with continuable mode is a combination the shipped `fork` provider deliberately avoids, so it needs measuring first.
+
 ## Known limitations
 
 - **The effort reservation is in-memory.** A process restart between a child's creation and its first request loses the reserved effort, and that child falls back to its route's provider default. The route itself is durable, so this cannot silently change models.
