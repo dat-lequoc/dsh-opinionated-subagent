@@ -102,6 +102,23 @@ It is read-only and adds no logic. The route is the `model` argument the tool al
 
 The row claims the `subagent` tool name. A keyed tool view replaces the generic row rather than decorating it, so this is a deliberate takeover of that one name; every other tool keeps its shipped rendering. Setting a different `toolName` in the spawn row means calls fall back to the generic row.
 
+## Steering a running subagent
+
+`lib/control.js` is an optional `send_message` replacement. Mount it in place of the shipped control row:
+
+```yaml
+    - id: tool-subagent-control
+      name: dsh-subagent-model/control
+```
+
+The shipped tool routes every delivery through `ctx.subagents.followup()`, which calls `Agent.followup()` and therefore targets `next-turn`. For a child that is mid-turn — running tools, one per step — the message is accepted and then waits for the whole turn to end, so a correction aimed at work in flight arrives after that work is done. Measured in a real session: a child counting to ten with one bash step per turn had a steer accepted at +7.4s and claimed at +54.9s, a 47.5-second stall.
+
+This version calls `Agent.steer()` for a running direct child, which targets `next-step` and is consumed at the next step boundary. Everything else is delegated to the native service unchanged: an idle, waiting, or absent child (it owns waking and cold resume), and any authority mismatch (it owns the authoritative rejection). Ownership accounting and settlement are untouched.
+
+The result reports which path ran, as `delivery: 'next-step'` or `'next-turn'`, so the model can tell whether a correction joined the current turn.
+
+A steer that races settlement is not silently lost: disposal clears the inbox, so if the child leaves the registry in the same tick, the delivery falls back to the native path.
+
 ## Routes
 
 | Route | Purpose |

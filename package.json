@@ -8,6 +8,7 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./spawn": "./lib/spawn.js",
+    "./control": "./lib/control.js",
     "./policy": "./lib/policy.js",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
