@@ -1,6 +1,18 @@
 # dsh-subagent-model
 
-A DeepSeek Harness plugin whose `subagent` tool **forces** every child onto an explicitly chosen model route and reasoning effort, instead of letting it inherit the parent agent's model.
+A minimal, opinionated `subagent` for DeepSeek Harness: you decide which models a child may run on, at which reasoning effort, and a correction reaches a working child at its next step instead of after its turn.
+
+## What it does
+
+- **Forces the child's model.** `subagent` takes a required `model` argument whose choices are your allowlist. A child never silently inherits the conversation's model.
+- **Forces the child's reasoning effort.** Effort is set per route by you, not by the delegating agent — it has no effort argument and cannot inherit yours.
+- **Refuses a wrong effort before spending anything.** A configured effort is validated against that exact model's advertised set, before any provider call.
+- **Steers a running child at its next step.** The shipped `send_message` queues behind the whole current turn; a correction aimed at work in flight can land minutes late. This one joins the turn in progress.
+- **Shows the route in the transcript.** Each `subagent` call renders the model it ran on, so you never read the session log to check.
+- **Configurable in the UI.** Settings → Plugins, with effort dropdowns populated from what each model actually supports.
+- **Neutral until you opt in.** Installed, it behaves exactly like the shipped tool; forcing starts when you edit the allowlist.
+
+Every piece is optional and composes per row: mount only the delegation frontend, only the steering `send_message`, or both.
 
 ## Why
 
