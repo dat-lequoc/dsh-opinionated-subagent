@@ -112,10 +112,10 @@ function makeScope(value, writable = true) {
 
 test('the card registers into settings.plugin.item under its namespace', () => {
   const { injected, registrations } = loadCard(makeScope({}))
-  assert.deepEqual(injected, ['settings.plugin.item'])
-  assert.equal(registrations.length, 1)
-  assert.equal(registrations[0].options.name, 'settings.plugin.item')
-  assert.equal(registrations[0].options.key, 'dsh-subagent-model')
+  assert.deepEqual(injected, ['settings.plugin.item', 'tool.call.toolview'])
+  const card = registrations.find(one => one.options.name === 'settings.plugin.item')
+  assert.ok(card !== undefined, 'no settings card registration')
+  assert.equal(card.options.key, 'dsh-subagent-model')
 })
 
 test('the plugin declares only what cordis loading needs', () => {
@@ -126,27 +126,27 @@ test('the plugin declares only what cordis loading needs', () => {
 
 test('a seeded install reports inheriting, not forcing', () => {
   const card = loadCard(makeScope({ routes: ['inherit/current'], efforts: {} }))
-  const { tree } = card.render(card.registrations[0].Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   assert.match(textOf(tree), /Inheriting/)
   assert.doesNotMatch(textOf(tree), /Forcing/)
 })
 
 test('removing the inherit route reports forcing', () => {
   const card = loadCard(makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} }))
-  const { tree } = card.render(card.registrations[0].Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   assert.match(textOf(tree), /Forcing/)
   assert.match(textOf(tree), /never inherits/)
 })
 
 test('an empty allowlist says delegation is disabled', () => {
   const card = loadCard(makeScope({ routes: [], efforts: {} }))
-  const { tree } = card.render(card.registrations[0].Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   assert.match(textOf(tree), /delegation is disabled/)
 })
 
 test('a read-only settings document disables the controls and says so', () => {
   const card = loadCard(makeScope({ routes: ['inherit/current'], efforts: {} }, false))
-  const { tree } = card.render(card.registrations[0].Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   assert.match(textOf(tree), /read-only/)
   const selects = flatten(tree).filter(one => one.type === 'select')
   assert.ok(selects.length > 0, 'rendered no controls')
@@ -156,7 +156,7 @@ test('a read-only settings document disables the controls and says so', () => {
 test('nothing is written until Save, and Save writes both fields', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: { 'kiro/claude-opus-5': 'high' } })
   const card = loadCard(scope)
-  const first = card.render(card.registrations[0].Component)
+  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   // Rendering and reading alone must not touch the document.
   assert.deepEqual(scope.writes, [])
 
@@ -165,7 +165,7 @@ test('nothing is written until Save, and Save writes both fields', async () => {
   remove.props.onClick()
 
   // Re-render with the staged draft, then Save.
-  const second = card.render(card.registrations[0].Component)
+  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   const save = flatten(second.tree).find(one => one.type === 'button' && one.children.includes('Save'))
   await save.props.onClick()
 
@@ -179,11 +179,11 @@ test('nothing is written until Save, and Save writes both fields', async () => {
 test('a provider-default effort is not persisted as a value', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} })
   const card = loadCard(scope)
-  const first = card.render(card.registrations[0].Component)
+  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   // Stage an explicit provider-default choice on the effort select.
   const select = flatten(first.tree).find(one => one.type === 'select' && one.props.value === 'provider/default')
   select.props.onChange({ target: { value: 'provider/default' } })
-  const second = card.render(card.registrations[0].Component)
+  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   const save = flatten(second.tree).find(one => one.type === 'button' && one.children.includes('Save'))
   await save.props.onClick()
   assert.deepEqual(scope.writes[0][1], {}, 'provider/default was stored as a value')
@@ -194,7 +194,7 @@ test('a configured effort the catalog no longer advertises stays visible', () =>
     routes: ['deepseek/deepseek-chat'],
     efforts: { 'deepseek/deepseek-chat': 'ultra' },
   }))
-  const { tree } = card.render(card.registrations[0].Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   assert.match(textOf(tree), /ultra \(not advertised\)/)
 })
 
@@ -241,10 +241,93 @@ test('a failed save keeps the staged values and says so', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} })
   scope.set = async () => { throw new Error('read-only') }
   const card = loadCard(scope)
-  const first = card.render(card.registrations[0].Component)
+  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   flatten(first.tree).find(one => one.type === 'button' && one.children.includes('Remove')).props.onClick()
-  const second = card.render(card.registrations[0].Component)
+  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   await flatten(second.tree).find(one => one.type === 'button' && one.children.includes('Save')).props.onClick()
-  const third = card.render(card.registrations[0].Component)
+  const third = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
   assert.match(textOf(third.tree), /Save failed/)
+})
+
+// --------------------------------------------------------------- toolview row
+
+/** The row registration, and a render helper for one call block. */
+function loadRow() {
+  const card = loadCard(makeScope({}))
+  const row = card.registrations.find(one => one.options.name === 'tool.call.toolview')
+  assert.ok(row !== undefined, 'no toolview registration')
+  return {
+    row,
+    render(block, extra = {}) {
+      return card.render(() => row.Component({ toolName: 'subagent', block, ...extra })).tree
+    },
+  }
+}
+
+const RUNNING = { callId: 'c1', name: 'subagent', argsRaw: JSON.stringify({ description: 'Ship the client', model: 'antigravity/gemini-3.7-flash' }) }
+const SETTLED = { kind: 'tool-result', callId: 'c1', name: 'subagent', isError: false, argsRaw: RUNNING.argsRaw }
+const FAILED = { ...SETTLED, isError: true }
+
+test('the row claims the subagent tool name', () => {
+  const { row } = loadRow()
+  assert.equal(row.options.name, 'tool.call.toolview')
+  assert.equal(row.options.key, 'subagent')
+})
+
+test('the row names the route the child runs on', () => {
+  const { render } = loadRow()
+  const text = textOf(render(RUNNING))
+  assert.match(text, /Subagent/)
+  assert.match(text, /antigravity\/gemini-3\.7-flash/)
+  assert.match(text, /Ship the client/)
+})
+
+test('a running call, a success and a failure are visually distinct', () => {
+  const { render } = loadRow()
+  const dot = tree => flatten(tree).find(one => one.props['aria-hidden'] === true)
+  const running = dot(render(RUNNING)).props.style.background
+  const ok = dot(render(SETTLED)).props.style.background
+  const failed = dot(render(FAILED)).props.style.background
+  assert.notEqual(running, ok)
+  assert.notEqual(ok, failed)
+  assert.equal(flatten(render(FAILED))[0].props['data-state'], 'error')
+  assert.equal(flatten(render(RUNNING))[0].props['data-state'], 'running')
+})
+
+test('an unreadable argument string claims no model', () => {
+  const { render } = loadRow()
+  // A truncated streaming argument: the row must not invent a route.
+  const text = textOf(render({ callId: 'c1', name: 'subagent', argsRaw: '{"description":"x","mod' }))
+  assert.match(text, /Subagent/)
+  assert.doesNotMatch(text, /gemini/)
+})
+
+test('a call from the shipped frontend renders without a model claim', () => {
+  const { render } = loadRow()
+  // The shipped tool has no `model` argument at all.
+  const text = textOf(render({ callId: 'c1', name: 'subagent', argsRaw: JSON.stringify({ description: 'Do a thing', prompt: 'p' }) }))
+  assert.match(text, /Do a thing/)
+  assert.doesNotMatch(text, /\//, 'rendered something route-shaped')
+})
+
+test('already-parsed arguments are accepted too', () => {
+  const { render } = loadRow()
+  const text = textOf(render({ callId: 'c1', name: 'subagent', args: { model: 'kiro/claude-opus-5', description: 'd' } }))
+  assert.match(text, /kiro\/claude-opus-5/)
+})
+
+test('the details affordance appears only when the owner supplies one', () => {
+  const { render } = loadRow()
+  const withInspect = flatten(render(SETTLED, { inspect: () => {} })).filter(one => one.type === 'button')
+  const without = flatten(render(SETTLED)).filter(one => one.type === 'button')
+  assert.equal(withInspect.length, 1)
+  assert.equal(without.length, 0)
+})
+
+test('the details button invokes the owner callback', () => {
+  const { render } = loadRow()
+  let called = 0
+  const button = flatten(render(SETTLED, { inspect: () => { called += 1 } })).find(one => one.type === 'button')
+  button.props.onClick()
+  assert.equal(called, 1)
 })

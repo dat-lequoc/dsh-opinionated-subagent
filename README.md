@@ -93,6 +93,14 @@ Both are read at **every** tool call, so an edit applies to the next delegation 
 | `persona` | — | Optional per-child persona shadowing the deployment persona |
 | `maxDepth` | `3` | Child recursion cap, or `provider-managed` to send none |
 
+## Seeing which model a subagent ran on
+
+Each `subagent` call in the transcript renders one line: a state dot (running / done / failed), the word Subagent, the route the child runs on, and the call's short description.
+
+It is read-only and adds no logic. The route is the `model` argument the tool already requires, so nothing new is logged or computed. A call whose arguments cannot be read — still streaming, interrupted, or made by the shipped frontend, which has no `model` argument — renders the ordinary summary and claims no model rather than guessing one.
+
+The row claims the `subagent` tool name. A keyed tool view replaces the generic row rather than decorating it, so this is a deliberate takeover of that one name; every other tool keeps its shipped rendering. Setting a different `toolName` in the spawn row means calls fall back to the generic row.
+
 ## Routes
 
 | Route | Purpose |
