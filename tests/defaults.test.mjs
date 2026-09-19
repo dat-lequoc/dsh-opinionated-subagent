@@ -12,7 +12,8 @@ import { test } from 'node:test'
 let host
 try {
   host = await import('../lib/index.js')
-} catch {
+} catch (error) {
+  if (process.env.DSH_REQUIRE_RUNTIME === '1' || error.code !== 'ERR_MODULE_NOT_FOUND') throw error
   host = undefined
 }
 

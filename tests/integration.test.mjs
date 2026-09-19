@@ -30,7 +30,8 @@ try {
     SystemPrompt: prompt.default,
     SessionId: session.SessionId,
   }
-} catch {
+} catch (error) {
+  if (process.env.DSH_REQUIRE_RUNTIME === '1' || error.code !== 'ERR_MODULE_NOT_FOUND') throw error
   harness = undefined
 }
 
@@ -39,7 +40,7 @@ const options = harness === undefined
   : {}
 
 /** Mount the plugin with a capture provider and return the recorded request. */
-async function delegate(settings, args) {
+async function delegate(settings, args, overrides = {}) {
   const { Context, ToolRuntime, SubagentRuntime, SystemPrompt, SessionId } = harness
   const spawn = await import('../lib/spawn.js')
 
@@ -70,10 +71,17 @@ async function delegate(settings, args) {
   })
 
   let seen
+  if (overrides.background) {
+    // Capture the frontend's continuable seam without running an LLM.
+    ctx.subagents.startContinuable = async ({ request, childId }) => {
+      seen = request
+      return { childId }
+    }
+  }
   ctx.subagents.registerProvider({
     name: 'capture',
-    capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: true },
-    inheritsParentContext: false,
+    capabilities: { agentOptions: true, outputSchema: false, depthLimit: true, toolFilter: true, persona: true, ...overrides.capabilities },
+    inheritsParentContext: overrides.inheritsParentContext ?? false,
     start: async (request) => {
       seen = request
       return {
@@ -91,9 +99,10 @@ async function delegate(settings, args) {
     // one-shot keeps the assertion on the plain start() path, which is the
     // path a capture provider can observe.
     backgroundMode: 'one-shot',
-    // The capture provider declares no depthLimit capability, exactly like a
-    // provider that owns its own recursion budget.
+    // Leave depth unspecified unless this case explicitly tests the cap.
     maxDepth: 'provider-managed',
+    ...overrides.config,
+    ...overrides.background ? { backgroundMode: 'continuable' } : {},
   })
 
   const schema = ctx.tools.schemas().find(one => one.name === 'subagent')
@@ -103,9 +112,10 @@ async function delegate(settings, args) {
     arguments: args,
     agent: {
       id: SessionId('parent-1'),
+      options: { subagentDepth: 0 },
       session: {
         id: SessionId('parent-1'),
-        header: {},
+        header: { delegationDepth: overrides.parentDepth ?? 0 },
         // The route captured for this turn, which inherit/current follows.
         requestHeader: () => ({
           config: { provider: 'kiro', model: 'claude-opus-5', reasoningEffort: 'high' },
@@ -123,7 +133,7 @@ test('the chosen route reaches the start request, defeating parent inheritance',
     { description: 'd', prompt: 'p', model: 'kiro/claude-opus-5' },
   )
   assert.notEqual(result.isError, true, JSON.stringify(result))
-  assert.deepEqual(seen.agentOptions, { provider: 'kiro', model: 'claude-opus-5' })
+  assert.deepEqual(seen.agentOptions, { provider: 'kiro', model: 'claude-opus-5', reasoningEffort: undefined })
 })
 
 test('the tool schema enumerates exactly the configured routes', options, async () => {
@@ -173,8 +183,8 @@ test('the seeded inherit route reproduces the shipped no-plugin behavior', optio
     { description: 'd', prompt: 'p', model: 'inherit/current' },
   )
   assert.notEqual(result.isError, true, JSON.stringify(result))
-  // The turn's own route, resolved at call time — not a creation-time default.
-  assert.deepEqual(seen.agentOptions, { provider: 'kiro', model: 'claude-opus-5' })
+  // The turn's own route and effort must both be durable.
+  assert.deepEqual(seen.agentOptions, { provider: 'kiro', model: 'claude-opus-5', reasoningEffort: 'high' })
   const rendered = result.content.map(block => block.text ?? '').join('')
   assert.match(rendered, /effort=high \(inherited\)/)
 })
@@ -205,4 +215,69 @@ test('the forced route and effort are reported back to the model', options, asyn
   const rendered = result.content.map(block => block.text ?? '').join('')
   assert.match(rendered, /kiro\/claude-opus-5/)
   assert.match(rendered, /effort=high/)
+})
+
+for (const background of [false, true]) {
+  test('both start paths persist forced route, effort and child restrictions (background=' + background + ')', options, async () => {
+    const filter = { deny: ['subagent', 'subagent_fork'] }
+    const { seen, result } = await delegate(
+      { routes: ['kiro/claude-opus-5'], efforts: { 'kiro/claude-opus-5': 'low' } },
+      { description: 'd', prompt: 'p', model: 'kiro/claude-opus-5' },
+      { background, config: { maxDepth: 1, toolFilter: filter } },
+    )
+    assert.notEqual(result.isError, true, JSON.stringify(result))
+    assert.deepEqual(seen.agentOptions, { provider: 'kiro', model: 'claude-opus-5', reasoningEffort: 'low' })
+    assert.equal(seen.maxDepth, 1)
+    assert.deepEqual(seen.toolFilter, filter)
+  })
+
+  test('persisted child depth cannot be reset to root (background=' + background + ')', options, async () => {
+    const { seen, result } = await delegate(
+      { routes: ['kiro/claude-opus-5'], efforts: {} },
+      { description: 'd', prompt: 'p', model: 'kiro/claude-opus-5' },
+      { background, parentDepth: 1, config: { maxDepth: 1 } },
+    )
+    assert.equal(result.isError, true)
+    assert.match(result.content[0].text, /depth 2 exceeds maxDepth 1/)
+    assert.equal(seen, undefined)
+  })
+}
+
+test('a provider without child filtering fails closed', options, async () => {
+  const { seen, result } = await delegate(
+    { routes: ['kiro/claude-opus-5'], efforts: {} },
+    { description: 'd', prompt: 'p', model: 'kiro/claude-opus-5' },
+    { config: { toolFilter: { deny: ['subagent'] } }, capabilities: { toolFilter: false } },
+  )
+  assert.equal(result.isError, true)
+  assert.match(result.content[0].text, /toolFilter/)
+  assert.equal(seen, undefined)
+})
+
+test('zero depth forbids even the first child', options, async () => {
+  const { seen, result } = await delegate(
+    { routes: ['kiro/claude-opus-5'], efforts: {} },
+    { description: 'd', prompt: 'p', model: 'kiro/claude-opus-5' },
+    { config: { maxDepth: 0 } },
+  )
+  assert.equal(result.isError, true)
+  assert.match(result.content[0].text, /depth 1 exceeds maxDepth 0/)
+  assert.equal(seen, undefined)
+})
+
+test('an omitted tool filter stays absent', options, async () => {
+  const { seen } = await delegate(
+    { routes: ['kiro/claude-opus-5'], efforts: {} },
+    { description: 'd', prompt: 'p', model: 'kiro/claude-opus-5' },
+  )
+  assert.equal(Object.hasOwn(seen, 'toolFilter'), false)
+})
+
+test('fork provider describes inherited context accurately', options, async () => {
+  const { schema } = await delegate(
+    { routes: ['kiro/claude-opus-5'], efforts: {} }, undefined,
+    { inheritsParentContext: true },
+  )
+  assert.match(schema.description, /inherits this conversation/)
+  assert.doesNotMatch(schema.description, /does not see this conversation/)
 })

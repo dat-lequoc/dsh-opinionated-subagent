@@ -32,7 +32,8 @@ try {
     SystemPrompt: prompt.default,
     SessionId: session.SessionId,
   }
-} catch {
+} catch (error) {
+  if (process.env.DSH_REQUIRE_RUNTIME === '1' || error.code !== 'ERR_MODULE_NOT_FOUND') throw error
   harness = undefined
 }
 
@@ -90,7 +91,7 @@ async function delegate(settings, args) {
   let seen
   ctx.subagents.registerProvider({
     name: 'capture',
-    capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: true },
+    capabilities: { agentOptions: true, outputSchema: false, depthLimit: false, toolFilter: false, persona: true },
     inheritsParentContext: false,
     start: async (request) => {
       seen = request

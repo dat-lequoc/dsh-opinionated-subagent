@@ -24,7 +24,8 @@ try {
     SystemPrompt: prompt.default,
     SessionId: session.SessionId,
   }
-} catch {
+} catch (error) {
+  if (process.env.DSH_REQUIRE_RUNTIME === '1' || error.code !== 'ERR_MODULE_NOT_FOUND') throw error
   harness = undefined
 }
 

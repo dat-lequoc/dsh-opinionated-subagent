@@ -16,7 +16,7 @@ Every piece is optional and composes per row: mount only the delegation frontend
 
 ## Why
 
-A child started with no `agentOptions` inherits its parent's route: `resolveChildAgentOptions` spreads the parent's `provider`/`model` first, and the shipped `@deepseek-ai/dsh-tool-subagent` takes only `{ description, prompt }` — it exposes no way for a caller to choose. So a worker silently runs on whatever the main agent runs on.
+A child started with no `agentOptions` inherits its parent's route. Current DSH can optionally expose model selection on its stock tool, but this plugin supplies a separate required-route policy and per-route, user-owned effort. Installing its settings panel does **not** configure the stock tools.
 
 This plugin replaces that frontend. The `model` argument is **required**, its `enum` is your configured allowlist, and the chosen route plus its configured effort are pinned onto the child.
 
@@ -35,9 +35,9 @@ The harness splits these two facts, so the plugin uses two mechanisms:
 | Fact | Mechanism | Durable? |
 |---|---|---|
 | provider + model | `SubagentStartRequest.agentOptions`, which takes precedence over the inherited parent route | yes — no bridge needed |
-| reasoning effort | `installModelSelection` on the child's own context at its `agent/created` edge | reservation is in-memory; the child's first `request/header` becomes the authority |
+| reasoning effort | `agentOptions.reasoningEffort`, plus `installModelSelection` on the live child | current DSH persists it in the continuation descriptor before the first request |
 
-`agentOptions` has no effort field — an effort reaches a request only through the `agent/request` waterfall. `lib/effort.js` uses the harness's own `installModelSelection` primitive (the same one the Web model picker uses), which also keeps prompt `{{model}}` interpolation and the logged `request/header` agreeing with what is actually sent.
+Current DSH supports `agentOptions.reasoningEffort`. The plugin passes it explicitly (including `undefined` to clear same-route inheritance for `provider/default`). `lib/effort.js` additionally uses the harness's `installModelSelection` primitive to keep live prompt interpolation and request routing in agreement.
 
 `agent/created` is a synchronous publication boundary, so the selection is installed before the child can assemble a prompt or issue a request.
 
@@ -51,7 +51,9 @@ That mounts the **host half** only: the settings namespace that owns your allowl
 
 The **tool row** belongs to an agent preset, because a delegation tool is per-agent composition and must *replace* the shipped row rather than sit beside it — two rows registering the same `subagent` name collide, and leaving the shipped one mounted would give the model a way to bypass this policy.
 
-In your preset's `agent.cordis.yml`, replace the `tool-subagent` row:
+Create a local copy of the preset you actually use (for example `ptc`) in the preset picker, then edit that copy's `agent.cordis.yml` under `~/.dsh/.agent-presets/<your-id>/`. Do not edit shipped presets: upgrades replace them. A host `cordis.patch.yml` does not patch the standing preset composition.
+
+Replace **both** delegation rows in that file as below. This example forces routes for spawn and fork, and prevents either kind of child from delegating:
 
 ```yaml
     - id: tool-subagent
@@ -60,8 +62,30 @@ In your preset's `agent.cordis.yml`, replace the `tool-subagent` row:
         provider: spawn
         toolName: subagent
         backgroundMode: continuable   # or one-shot
-        maxDepth: 3                   # or provider-managed
+        maxDepth: 1
+        toolFilter:
+          deny: [subagent, subagent_fork]
+
+    - id: tool-subagent-fork
+      name: dsh-subagent-model/spawn
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+        maxDepth: 1
+        toolFilter:
+          deny: [subagent, subagent_fork]
 ```
+
+Select your local preset for a **new session** (and optionally make it the default). Existing sessions keep their original preset generation. Verify that both tool schemas now require `model` and enumerate your configured routes. If `model` is missing, the stock frontend is still running; editing the allowlist cannot affect it. Remove `inherit/current` to forbid inheritance.
+
+### Depth is not a child permission
+
+`maxDepth` is an absolute per-start cap: root depth is 0, its child is 1. `0` forbids even the first child; `1` permits a direct child. The default remains `3` for compatibility. **The cap is not an inherited ceiling.** A child can bypass one tool’s cap through a different frontend with a larger cap.
+
+Use `toolFilter` to deny both `subagent` and `subagent_fork` inside each child. DSH enforces this on execution as well as schema visibility, including PTC bindings, and persists the filter for continuable cold resume. Keep the stock `send_message` available for reporting. Names must exist in the inherited tool surface; if your preset omits fork, omit that name from the filter too. Add any custom delegation aliases or other agent-creation tools your preset exposes, or use an explicit `allow` list of worker tools. This is tool-surface restriction, not a sandbox against trusted plugins directly calling runtime services.
+
+Forcing the parent’s delegation choices also requires replacing or disabling **every** alternate delegation frontend; filtering children alone does not close a stock fork bypass in the parent.
 
 ## Configure
 
@@ -104,7 +128,8 @@ Both are read at **every** tool call, so an edit applies to the next delegation 
 | `toolName` | `subagent` | Model-facing tool name; must be unique among live tools |
 | `backgroundMode` | `continuable` | `continuable` returns a durable subagent id reachable by `send_message`; `one-shot` defaults to waiting |
 | `persona` | — | Optional per-child persona shadowing the deployment persona |
-| `maxDepth` | `3` | Child recursion cap, or `provider-managed` to send none |
+| `maxDepth` | `3` | Absolute per-start depth cap; `0` disables starts, `1` permits direct children, `provider-managed` sends none |
+| `toolFilter` | — | Child `{ allow?: string[], deny?: string[] }`; use `deny: [subagent, subagent_fork]` to prevent nested delegation in a preset exposing both tools |
 
 ## Seeing which model a subagent ran on
 
@@ -116,7 +141,7 @@ The row claims the `subagent` tool name. A keyed tool view replaces the generic 
 
 ## Steering a running subagent
 
-`lib/control.js` is an optional `send_message` replacement. Mount it in place of the shipped control row:
+**On current DSH, keep the stock `send_message`: it already supports next-step steering and cold resume.** The following describes the optional legacy `lib/control.js` replacement for older runtimes, not a required part of model/depth enforcement:
 
 ```yaml
     - id: tool-subagent-control
@@ -143,9 +168,11 @@ A steer that races settlement is not silently lost: disposal clears the inbox, s
 npm test
 ```
 
-51 tests, all passing. `policy.test.mjs` and `reservations.test.mjs` are dependency-free — the route, effort, and reservation-matching rules are pure and need no harness. `integration.test.mjs` mounts the tool on a real Cordis context with the real `ToolRuntime`/`SubagentRuntime` and asserts against a capture provider that the built `SubagentStartRequest` carries the chosen route, including that the seeded inherit route reproduces the shipped behavior. `defaults.test.mjs` pins the behavior-neutral seed. `client-card.test.mjs` exercises the browser card without a browser — it supplies a module loader and a React stub that records the element tree, then asserts the slot registration, that nothing is written before Save, that Save writes `efforts` before `routes`, and that a removed route takes its effort with it. It also pins every theme token the card names against the set the Theme provider publishes, because an invented token cannot fail loudly — CSS falls through to the literal fallback, so a typo renders the card unreadable rather than erroring. The harness-dependent suites self-skip when those packages are not resolvable.
+Run `npm run test:runtime` with current DSH packages resolvable to require the runtime suites (missing imports fail rather than skip). `child-policy.test.mjs` exercises actual DSH child composition, execution filtering, and descriptor snapshots; it is not a full cold-resume end-to-end test. `policy.test.mjs` and `reservations.test.mjs` are dependency-free — the route, effort, and reservation-matching rules are pure and need no harness. `integration.test.mjs` mounts the tool on a real Cordis context with the real `ToolRuntime`/`SubagentRuntime` and asserts against a capture provider that the built `SubagentStartRequest` carries the chosen route, including that the seeded inherit route reproduces the shipped behavior. `defaults.test.mjs` pins the behavior-neutral seed. `client-card.test.mjs` exercises the browser card without a browser — it supplies a module loader and a React stub that records the element tree, then asserts the slot registration, that nothing is written before Save, that Save writes `efforts` before `routes`, and that a removed route takes its effort with it. It also pins every theme token the card names against the set the Theme provider publishes, because an invented token cannot fail loudly — CSS falls through to the literal fallback, so a typo renders the card unreadable rather than erroring. The harness-dependent suites self-skip when those packages are not resolvable.
 
-### Live end-to-end check
+### Historical live end-to-end check (pre-preset composition)
+
+The overlay below predates standing presets. **Do not use it to patch a current preset:** follow the local-preset installation above instead. These historical results are not verification of a current live deployment.
 
 `tests/live-headless.patch.yml` runs the real thing: it disables the profile's
 shipped `tool-subagent` row, mounts this frontend in its place, and pins the
@@ -177,7 +204,8 @@ The spec is complete enough to implement from — every mechanism is cited in cu
 
 ## Known limitations
 
-- **The effort reservation is in-memory.** A process restart between a child's creation and its first request loses the reserved effort, and that child falls back to its route's provider default. The route itself is durable, so this cannot silently change models.
+- **The frontend must be mounted in your selected preset.** The host settings panel alone never enforces model or depth policy. New preset compositions apply to new sessions, not existing conversations.
+- **Alternate delegation tools are separate policy paths.** Replace or disable them too. Child filters cover the inherited tools named in the filter, not arbitrary trusted child-local plugin registrations.
 - **`lib/client.js` is a hand-written lazy-CJS factory.** The repository's `tsdown` client preset is not published, so an out-of-tree package must reproduce that artifact format itself. The card therefore uses `React.createElement` directly and draws its own chrome — the client bundle-purity gate rejects value imports across plugins, so it cannot reuse the shipped card components.
 - **The card needs the catalog route to offer choices.** Without a web server the settings namespace still works from YAML; the picker and effort dropdowns are simply empty.
 - **One tool row per provider.** Two rows sharing a `toolName` collide at registration, by design.
