@@ -97,3 +97,31 @@ test('installSmartWait returns immediately on real event or no active peers', as
   assert.equal(executeCount, 1)
   assert.equal(result.value.change, 'task_completed')
 })
+
+test('installSmartWait injects affirmative prompt guidance only when wait_agent is present', async () => {
+  const ctx = new Context()
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(ToolRuntime)
+
+  installSmartWait(ctx)
+
+  // Before wait_agent is registered: text is empty
+  let assembled = await ctx.systemPrompt.assemble({})
+  let waitContext = assembled.contexts.find(c => c.name === 'opinionated:team-wait')
+  assert.equal(typeof waitContext?.text === 'function' ? waitContext.text() : waitContext?.text ?? '', '')
+
+  // Register wait_agent
+  ctx.tools.register(defineTool({
+    name: 'wait_agent',
+    parameters: {},
+    output: { schema: { type: 'object', additionalProperties: true }, render: () => [] },
+    execute: async () => ({})
+  }))
+
+  assembled = await ctx.systemPrompt.assemble({})
+  waitContext = assembled.contexts.find(c => c.name === 'opinionated:team-wait')
+  const renderedText = typeof waitContext?.text === 'function' ? waitContext.text() : waitContext?.text ?? ''
+  assert.match(renderedText, /timeout_ms: 300000 \(5 minutes\)/)
+  assert.match(renderedText, /wait_agent is event-driven/)
+  assert.doesNotMatch(renderedText, /Do not/)
+})
