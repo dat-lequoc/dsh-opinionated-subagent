@@ -4,7 +4,7 @@ A minimal, opinionated `subagent` for DeepSeek Harness: you decide which models 
 
 ## What it does
 
-- **Forces the child's model.** `subagent` takes a required `model` argument whose choices are your allowlist. A child never silently inherits the conversation's model.
+- **Forces every child model.** `subagent` takes a required `model` argument; Agent Teams' `spawn_teammate` has no model argument, so it uses the first concrete route in this allowlist. Neither path silently inherits the conversation's model when forcing is configured.
 - **Forces the child's reasoning effort.** Effort is set per route by you, not by the delegating agent — it has no effort argument and cannot inherit yours.
 - **Refuses a wrong effort before spending anything.** A configured effort is validated against that exact model's advertised set, before any provider call.
 - **Steers a running child at its next step.** The shipped `send_message` queues behind the whole current turn; a correction aimed at work in flight can land minutes late. This one joins the turn in progress.
@@ -106,7 +106,7 @@ dsh-subagent-model:
     deepseek/deepseek-chat: provider/default
 ```
 
-- `routes` — the complete allowlist, spelled `provider/model-id`, plus the optional `inherit/current` entry. Only the *first* `/` splits a provider route, so a model id may itself contain slashes. Defaults to `[inherit/current]`.
+- `routes` — the complete allowlist, spelled `provider/model-id`, plus the optional `inherit/current` entry. Only the *first* `/` splits a provider route, so a model id may itself contain slashes. Defaults to `[inherit/current]`. For Agent Teams `spawn_teammate`, the first concrete route (the first entry other than `inherit/current`) is the route forced onto the teammate.
 - `efforts` — effort per route. A route absent from the map, or set to `provider/default`, sends no explicit effort — and for `inherit/current` that means following the calling turn's own effort. Any other value must be an effort that exact model advertises; an unadvertised id is refused **before** any provider call rather than clamped. An explicit effort on `inherit/current` overrides the inherited one, so you can follow the model but pin the effort.
 
 Both are read at **every** tool call, so an edit applies to the next delegation with no restart.
