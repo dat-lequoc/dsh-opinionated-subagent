@@ -64,7 +64,7 @@ function loadCard(scope) {
       inject: (name, run) => { injected.push(name); run() },
       register: (options, Component) => { registrations.push({ options, Component }); return () => {} },
     },
-    settingsScope: { bind: () => scope },
+    configForms: { get: () => scope },
   }
   ns.apply(ctx)
   return {
@@ -116,12 +116,15 @@ test('the card registers into settings.plugin.item under its namespace', () => {
   const card = registrations.find(one => one.options.name === 'settings.plugin.item')
   assert.ok(card !== undefined, 'no settings card registration')
   assert.equal(card.options.key, 'dsh-subagent-model')
+  const toolview = registrations.find(one => one.options.name === 'tool.call.toolview')
+  assert.ok(toolview !== undefined, 'no subagent toolview registration')
+  assert.equal(toolview.options.priority, -1)
 })
 
 test('the plugin declares only what cordis loading needs', () => {
   const { ns } = loadCard(makeScope({}))
   assert.deepEqual(Object.keys(ns).sort(), ['apply', 'inject'])
-  assert.deepEqual(ns.inject, ['slots', 'settingsScope'])
+  assert.deepEqual(ns.inject, ['slots', 'configForms'])
 })
 
 test('a seeded install reports inheriting, not forcing', () => {
