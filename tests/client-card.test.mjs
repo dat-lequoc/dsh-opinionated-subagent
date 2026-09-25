@@ -110,12 +110,12 @@ function makeScope(value, writable = true) {
   }
 }
 
-test('the card registers into settings.plugin.item under its namespace', () => {
+test('the card registers into settings.plugins.tab under its namespace', () => {
   const { injected, registrations } = loadCard(makeScope({}))
-  assert.deepEqual(injected, ['settings.plugin.item', 'tool.call.toolview'])
-  const card = registrations.find(one => one.options.name === 'settings.plugin.item')
+  assert.deepEqual(injected, ['settings.plugins.tab', 'tool.call.toolview'])
+  const card = registrations.find(one => one.options.name === 'settings.plugins.tab')
   assert.ok(card !== undefined, 'no settings card registration')
-  assert.equal(card.options.key, 'dsh-subagent-model')
+  assert.equal(card.options.id, 'dsh-subagent-model')
   const toolview = registrations.find(one => one.options.name === 'tool.call.toolview')
   assert.ok(toolview !== undefined, 'no subagent toolview registration')
   assert.equal(toolview.options.priority, -1)
@@ -129,27 +129,27 @@ test('the plugin declares only what cordis loading needs', () => {
 
 test('a seeded install reports inheriting, not forcing', () => {
   const card = loadCard(makeScope({ routes: ['inherit/current'], efforts: {} }))
-  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   assert.match(textOf(tree), /Inheriting/)
   assert.doesNotMatch(textOf(tree), /Forcing/)
 })
 
 test('removing the inherit route reports forcing', () => {
   const card = loadCard(makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} }))
-  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   assert.match(textOf(tree), /Forcing/)
   assert.match(textOf(tree), /never inherits/)
 })
 
 test('an empty allowlist says delegation is disabled', () => {
   const card = loadCard(makeScope({ routes: [], efforts: {} }))
-  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   assert.match(textOf(tree), /delegation is disabled/)
 })
 
 test('a read-only settings document disables the controls and says so', () => {
   const card = loadCard(makeScope({ routes: ['inherit/current'], efforts: {} }, false))
-  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   assert.match(textOf(tree), /read-only/)
   const selects = flatten(tree).filter(one => one.type === 'select')
   assert.ok(selects.length > 0, 'rendered no controls')
@@ -159,7 +159,7 @@ test('a read-only settings document disables the controls and says so', () => {
 test('nothing is written until Save, and Save writes both fields', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: { 'kiro/claude-opus-5': 'high' } })
   const card = loadCard(scope)
-  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   // Rendering and reading alone must not touch the document.
   assert.deepEqual(scope.writes, [])
 
@@ -168,7 +168,7 @@ test('nothing is written until Save, and Save writes both fields', async () => {
   remove.props.onClick()
 
   // Re-render with the staged draft, then Save.
-  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   const save = flatten(second.tree).find(one => one.type === 'button' && one.children.includes('Save'))
   await save.props.onClick()
 
@@ -182,11 +182,11 @@ test('nothing is written until Save, and Save writes both fields', async () => {
 test('a provider-default effort is not persisted as a value', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} })
   const card = loadCard(scope)
-  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   // Stage an explicit provider-default choice on the effort select.
   const select = flatten(first.tree).find(one => one.type === 'select' && one.props.value === 'provider/default')
   select.props.onChange({ target: { value: 'provider/default' } })
-  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   const save = flatten(second.tree).find(one => one.type === 'button' && one.children.includes('Save'))
   await save.props.onClick()
   assert.deepEqual(scope.writes[0][1], {}, 'provider/default was stored as a value')
@@ -197,7 +197,7 @@ test('a configured effort the catalog no longer advertises stays visible', () =>
     routes: ['deepseek/deepseek-chat'],
     efforts: { 'deepseek/deepseek-chat': 'ultra' },
   }))
-  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const { tree } = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   assert.match(textOf(tree), /ultra \(not advertised\)/)
 })
 
@@ -244,11 +244,11 @@ test('a failed save keeps the staged values and says so', async () => {
   const scope = makeScope({ routes: ['kiro/claude-opus-5'], efforts: {} })
   scope.set = async () => { throw new Error('read-only') }
   const card = loadCard(scope)
-  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const first = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   flatten(first.tree).find(one => one.type === 'button' && one.children.includes('Remove')).props.onClick()
-  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const second = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   await flatten(second.tree).find(one => one.type === 'button' && one.children.includes('Save')).props.onClick()
-  const third = card.render(card.registrations.find(one => one.options.name === "settings.plugin.item").Component)
+  const third = card.render(card.registrations.find(one => one.options.name === "settings.plugins.tab").Component)
   assert.match(textOf(third.tree), /Save failed/)
 })
 
